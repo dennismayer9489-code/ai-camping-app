@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 
 // Karte dynamisch ohne Server-Side Rendering (SSR) laden
-const Map = dynamic(() => import('./components/Map'), { 
+const Map = dynamic(() => import('@/app/components/Map'), { 
   ssr: false,
   loading: () => <div className="h-[400px] w-full bg-slate-100 animate-pulse rounded-2xl flex items-center justify-center text-slate-400">Karte wird geladen...</div>
 });
