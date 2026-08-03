@@ -3,7 +3,7 @@
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { CampingSite } from './page';
+import { CampingSite } from '../types';
 
 const customIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -26,6 +26,7 @@ export default function MapComponent({ sites }: MapProps) {
       center={defaultCenter}
       zoom={10}
       style={{ height: '100%', width: '100%' }}
+      scrollWheelZoom={false}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -40,7 +41,9 @@ export default function MapComponent({ sites }: MapProps) {
               <br />
               <span className="text-sm text-slate-600">{site.location}</span>
               <br />
-              <span className="font-bold text-emerald-600 mt-1 inline-block">{site.price}</span>
+              <span className="font-bold text-emerald-600 mt-1 inline-block">
+                {site.price}
+              </span>
             </div>
           </Popup>
         </Marker>
