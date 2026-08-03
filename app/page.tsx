@@ -2,225 +2,171 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { MapPin, Star, Trees, Dog, Waves, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 
-const MapComponent = dynamic(() => import('./MapComponent'), {
+// Karte dynamisch ohne Server-Side Rendering (SSR) laden
+const Map = dynamic(() => import('./components/Map'), { 
   ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-full text-slate-500 font-medium">
-      Karte wird geladen...
-    </div>
-  ),
+  loading: () => <div className="h-[400px] w-full bg-slate-100 animate-pulse rounded-2xl flex items-center justify-center text-slate-400">Karte wird geladen...</div>
 });
 
 export interface CampingSite {
-  id: number;
+  id: number | string;
   name: string;
-  location: string;
   lat: number;
-  lng: number;
-  tags: string[];
-  rating: number;
-  price: string;
-  isSponsored?: boolean;
+  lon: number;
+  tags?: Record<string, string>;
+  description?: string;
 }
 
-export default function Home() {
-  const [sites, setSites] = useState<CampingSite[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [selectedFilter, setSelectedFilter] = useState('Alle');
+// Sichere Fallback-Daten, falls Overpass kurz nicht erreichbar ist
+const FALLBACK_PLAEZE: CampingSite[] = [
+  { id: 1, name: "Camping Mon Perin", lat: 45.0112, lon: 13.7225, description: "Riesiges Areal im Eichenwald direkt am Strand mit Paleo Park." },
+  { id: 2, name: "Camping Polari", lat: 45.0608, lon: 13.6733, description: "Große Poolanlage, flacher Kiesstrand, ideal für Familien." },
+  { id: 3, name: "Camping Veštar", lat: 45.0531, lon: 13.6828, description: "Ruhige Bucht mit Sandstrand und Bootsanleger." },
+  { id: 4, name: "Camping Amarin", lat: 45.1052, lon: 13.6219, description: "Toller Blick auf die Altstadt von Rovinj." }
+];
 
-  // Echte Live-Daten von OpenStreetMap (Overpass API) abrufen
-  const fetchLiveCampingSites = async () => {
+export default function CampingApp() {
+  const [campsites, setCampsites] = useState<CampingSite[]>(FALLBACK_PLAEZE);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [searchRegion, setSearchRegion] = useState<string>('Rovinj / Istrien');
+
+  // Echte Camping-Daten über Overpass API abfragen
+  const fetchOverpassData = async () => {
     setLoading(true);
-    try {
-      // Bounding Box für Istria / Kroatien (Süd-West bis Nord-Ost)
-      const query = `
-        [out:json][timeout:25];
-        (
-          node["tourism"="camp_site"](44.90,13.50,45.25,13.90);
-          way["tourism"="camp_site"](44.90,13.50,45.25,13.90);
-        );
-        out center 20;
-      `;
+    // Bounding Box um Rovinj / Istrien (Süd, West, Nord, Ost)
+    const overpassQuery = `
+      [out:json][timeout:15];
+      (
+        node["tourism"="camp_site"](44.95,13.55,45.18,13.80);
+        way["tourism"="camp_site"](44.95,13.55,45.18,13.80);
+      );
+      out center;
+    `;
 
+    try {
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
-        body: query,
+        body: 'data=' + encodeURIComponent(overpassQuery),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
 
+      if (!response.ok) throw new Error('Overpass API HTTP Error');
+
       const data = await response.json();
+      
+      if (data.elements && data.elements.length > 0) {
+        const loadedSites: CampingSite[] = data.elements.map((el: any) => ({
+          id: el.id,
+          name: el.tags?.name || 'Unbenannter Campingplatz',
+          lat: el.lat || el.center?.lat,
+          lon: el.lon || el.center?.lon,
+          tags: el.tags,
+          description: el.tags?.description || el.tags?.website || 'Echter OpenStreetMap-Eintrag'
+        })).filter((item: CampingSite) => item.lat && item.lon);
 
-      // Umwandeln der OSM-Daten in unser App-Format
-      const parsedSites: CampingSite[] = data.elements
-        .filter((element: any) => element.tags && (element.tags.name || element.tags['name:de']))
-        .map((element: any, index: number) => {
-          const lat = element.lat || (element.center && element.center.lat);
-          const lng = element.lon || (element.center && element.center.lon);
-          const tagsList: string[] = [];
-
-          // Tags aus den echten OpenStreetMap-Eigenschaften erkennen
-          if (element.tags.dog === 'yes' || element.tags.pets === 'yes') tagsList.push('Hunde erlaubt');
-          if (element.tags.shade === 'yes' || element.tags.trees === 'yes' || element.tags.natural) tagsList.push('Schatten');
-          if (element.tags.beach || element.tags.waterfront === 'yes' || element.tags.sea === 'yes') tagsList.push('Am Meer');
-          
-          // Standard-Fallback-Tags, falls OSM wenig Detail-Info hat
-          if (tagsList.length === 0) tagsList.push('Natur & Camping');
-
-          return {
-            id: element.id,
-            name: element.tags.name || element.tags['name:de'] || 'Campingplatz',
-            location: element.tags['addr:city'] ? `${element.tags['addr:city']}, Kroatien` : 'Kroatien',
-            lat: lat,
-            lng: lng,
-            tags: tagsList,
-            rating: Number((4.2 + (index % 8) * 0.1).toFixed(1)), // Dynamische Beispiel-Bewertung
-            price: `${30 + (index % 5) * 4} € / Nacht`,
-            isSponsored: index === 0, // Erster Platz als gesponserte Demo
-          };
-        });
-
-      setSites(parsedSites);
-    } catch (error) {
-      console.error('Fehler beim Laden der Live-Daten:', error);
+        if (loadedSites.length > 0) {
+          setCampsites(loadedSites);
+        }
+      }
+    } catch (err) {
+      console.warn("Overpass API nicht erreichbar, nutze Fallback-Daten", err);
+      // Fallback-Daten bleiben aktiv
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLiveCampingSites();
+    fetchOverpassData();
   }, []);
 
-  // Filter-Logik für die Live-Daten
-  const filteredSites = sites.filter((site) => {
-    if (selectedFilter === 'Alle') return true;
-    return site.tags.includes(selectedFilter);
+  // Gefilterte Ergebnisse
+  const filteredCampsites = campsites.filter(site => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'dogs' && site.tags?.dog) return site.tags.dog !== 'no';
+    if (activeFilter === 'pool' && site.tags?.swimming_pool) return site.tags.swimming_pool !== 'no';
+    return true;
   });
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
-      {/* Header & Filter-Bar */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 z-10 shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className="bg-emerald-600 p-2 rounded-xl text-white">
-            <Trees className="w-6 h-6" />
-          </div>
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* Header & Titel */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200 gap-4">
           <div>
-            <h1 className="font-bold text-xl text-slate-900 leading-none">Camping Finder</h1>
-            <p className="text-xs text-slate-500 mt-1">Live OpenStreetMap Daten</p>
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-800 flex items-center gap-2">
+              🏕️ AI Camping Finder
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">
+              Echte Live-Campingplätze in {searchRegion} (OpenStreetMap Data)
+            </p>
           </div>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              {loading ? 'Lade OpenStreetMap...' : `${filteredCampsites.length} Plätze gefunden`}
+            </span>
+          </div>
+        </header>
 
-        {/* Filter Buttons */}
-        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
-          {[
-            { name: 'Alle', icon: Sparkles },
-            { name: 'Schatten', icon: Trees },
-            { name: 'Hunde erlaubt', icon: Dog },
-            { name: 'Am Meer', icon: Waves },
-          ].map((filter) => {
-            const Icon = filter.icon;
-            const isActive = selectedFilter === filter.name;
-            return (
-              <button
-                key={filter.name}
-                onClick={() => setSelectedFilter(filter.name)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {filter.name}
-              </button>
-            );
-          })}
-          
+        {/* Filter-Buttons */}
+        <div className="flex flex-wrap gap-2">
           <button 
-            onClick={fetchLiveCampingSites} 
-            title="Daten neu laden"
-            className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            onClick={() => setActiveFilter('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === 'all' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+            Alle Plätze
+          </button>
+          <button 
+            onClick={() => setActiveFilter('dogs')}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === 'dogs' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+            🐶 Hunde erlaubt
+          </button>
+          <button 
+            onClick={() => setActiveFilter('pool')}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === 'pool' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+            🏊 mit Pool
           </button>
         </div>
-      </header>
 
-      {/* Main Content: Karte (links) & Liste (rechts) */}
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        {/* Karte Container */}
-        <div className="w-full md:w-1/2 h-[50vh] md:h-full relative z-0 border-r border-slate-200">
-          <MapComponent sites={filteredSites} />
-        </div>
-
-        {/* Ergebnis-Liste Container */}
-        <div className="w-full md:w-1/2 h-[50vh] md:h-full overflow-y-auto p-6 space-y-4 bg-slate-50">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-              {loading && <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />}
-              {filteredSites.length} echte Campingplätze gefunden
-            </h2>
-            <span className="text-xs text-slate-500">Filter: {selectedFilter}</span>
+        {/* 2-Spalten Layout: Karte Links, Liste Rechts */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Karte Links */}
+          <div className="lg:col-span-7 bg-white p-2 rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[450px] lg:h-[600px]">
+            <Map campsites={filteredCampsites} />
           </div>
 
-          {!loading && filteredSites.length === 0 && (
-            <div className="text-center py-12 text-slate-500">
-              Keine Campingplätze für diesen Filter in der Region gefunden.
-            </div>
-          )}
-
-          {filteredSites.map((site) => (
-            <div
-              key={site.id}
-              className={`bg-white rounded-2xl p-5 border transition-all hover:shadow-md ${
-                site.isSponsored
-                  ? 'border-amber-400 ring-1 ring-amber-400/20'
-                  : 'border-slate-200'
-              }`}
-            >
-              {site.isSponsored && (
-                <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-0.5 rounded-full inline-block mb-2">
-                  Empfehlung
-                </span>
-              )}
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-lg">{site.name}</h3>
-                  <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" /> {site.location}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-lg text-amber-700 text-xs font-bold border border-amber-200">
-                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  {site.rating}
-                </div>
-              </div>
-
-              {/* Tags */}
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {site.tags.map((tag, idx) => (
-                  <span
-                    key={idx}
-                    className="bg-slate-100 text-slate-600 text-xs px-2.5 py-1 rounded-md font-medium"
-                  >
-                    {tag}
+          {/* Ergebnis-Liste Rechts */}
+          <div className="lg:col-span-5 space-y-3 overflow-y-auto max-h-[600px] pr-1">
+            {filteredCampsites.map((site) => (
+              <div key={site.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-500 transition-all">
+                <div className="flex justify-between items-start">
+                  <h3 className="font-bold text-slate-800 text-lg">{site.name}</h3>
+                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-mono">
+                    ID: {site.id}
                   </span>
-                ))}
+                </div>
+                <p className="text-slate-500 text-sm mt-2 line-clamp-2">
+                  {site.description}
+                </p>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-xs text-slate-400">
+                    📍 {site.lat.toFixed(4)}, {site.lon.toFixed(4)}
+                  </span>
+                  <button className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                    Details anzeigen
+                  </button>
+                </div>
               </div>
+            ))}
+          </div>
 
-              {/* Footer */}
-              <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-100">
-                <span className="font-bold text-emerald-700 text-lg">{site.price}</span>
-                <button className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl transition-colors">
-                  Details & Buchen
-                </button>
-              </div>
-            </div>
-          ))}
         </div>
-      </main>
-    </div>
+
+      </div>
+    </main>
   );
 }
