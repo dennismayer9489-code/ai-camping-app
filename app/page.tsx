@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 
 // Karte dynamisch ohne Server-Side Rendering (SSR) laden
-const Map = dynamic(() => import('./components/Map').catch(() => import('../components/Map')), { 
+const Map = dynamic(() => import('@/app/components/Map'), { 
   ssr: false,
   loading: () => <div className="h-[400px] w-full bg-slate-100 animate-pulse rounded-2xl flex items-center justify-center text-slate-400">Karte wird geladen...</div>
 });
@@ -18,7 +18,7 @@ export interface CampingSite {
   description?: string;
 }
 
-// Sichere Fallback-Daten, falls Overpass kurz nicht erreichbar ist
+// Sichere Fallback-Daten
 const FALLBACK_PLAEZE: CampingSite[] = [
   { id: 1, name: "Camping Mon Perin", lat: 45.0112, lon: 13.7225, description: "Riesiges Areal im Eichenwald direkt am Strand mit Paleo Park." },
   { id: 2, name: "Camping Polari", lat: 45.0608, lon: 13.6733, description: "Große Poolanlage, flacher Kiesstrand, ideal für Familien." },
@@ -30,12 +30,11 @@ export default function CampingApp() {
   const [campsites, setCampsites] = useState<CampingSite[]>(FALLBACK_PLAEZE);
   const [loading, setLoading] = useState<boolean>(false);
   const [activeFilter, setActiveFilter] = useState<string>('all');
-  const [searchRegion, setSearchRegion] = useState<string>('Rovinj / Istrien');
+  const [searchRegion] = useState<string>('Rovinj / Istrien');
 
   // Echte Camping-Daten über Overpass API abfragen
   const fetchOverpassData = async () => {
     setLoading(true);
-    // Bounding Box um Rovinj / Istrien (Süd, West, Nord, Ost)
     const overpassQuery = `
       [out:json][timeout:15];
       (
@@ -72,7 +71,6 @@ export default function CampingApp() {
       }
     } catch (err) {
       console.warn("Overpass API nicht erreichbar, nutze Fallback-Daten", err);
-      // Fallback-Daten bleiben aktiv
     } finally {
       setLoading(false);
     }
@@ -82,7 +80,6 @@ export default function CampingApp() {
     fetchOverpassData();
   }, []);
 
-  // Gefilterte Ergebnisse
   const filteredCampsites = campsites.filter(site => {
     if (activeFilter === 'all') return true;
     if (activeFilter === 'dogs' && site.tags?.dog) return site.tags.dog !== 'no';
@@ -94,7 +91,7 @@ export default function CampingApp() {
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Header & Titel */}
+        {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200 gap-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-800 flex items-center gap-2">
@@ -131,15 +128,12 @@ export default function CampingApp() {
           </button>
         </div>
 
-        {/* 2-Spalten Layout: Karte Links, Liste Rechts */}
+        {/* Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Karte Links */}
           <div className="lg:col-span-7 bg-white p-2 rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-[450px] lg:h-[600px]">
             <Map campsites={filteredCampsites} />
           </div>
 
-          {/* Ergebnis-Liste Rechts */}
           <div className="lg:col-span-5 space-y-3 overflow-y-auto max-h-[600px] pr-1">
             {filteredCampsites.map((site) => (
               <div key={site.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-emerald-500 transition-all">
@@ -163,7 +157,6 @@ export default function CampingApp() {
               </div>
             ))}
           </div>
-
         </div>
 
       </div>
