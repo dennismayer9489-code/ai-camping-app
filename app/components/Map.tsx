@@ -1,13 +1,13 @@
 'use client';
-
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Standard-Icon Fix für Leaflet in Next.js
+// Standard-Icon-Fix für Next.js, damit die Nadeln immer sichtbar sind
 const customIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -15,44 +15,49 @@ const customIcon = L.icon({
   shadowSize: [41, 41]
 });
 
-// Definition der Datenstruktur für einen Campingplatz
-interface CampingSite {
-  id: number;
-  name: string;
-  location: string;
-  lat: number;
-  lng: number;
-  tags: string[];
-  price: string;
-  sponsored: boolean;
-  description: string;
+// Hilfskomponente, damit die Karte bei einer neuen Suche automatisch zum Ort springt
+function ChangeView({ center }: { center: [number, number] }) {
+  const map = useMap();
+  map.setView(center, 12);
+  return null;
 }
 
+// Typisierung, damit TypeScript nicht mehr meckert
 interface MapProps {
-  sites: CampingSite[];
+  sites: Array<{
+    id: number;
+    name: string;
+    location: string;
+    lat: number;
+    lng: number;
+    description?: string;
+  }>;
+  center: [number, number];
 }
 
-export default function Map({ sites }: MapProps) {
+export default function Map({ sites, center }: MapProps) {
   return (
     <MapContainer 
-      center={[45.1094, 13.6006]} // Standard-Zentrum (z. B. Rovinj / Kroatien)
-      zoom={10} 
-      scrollWheelZoom={false}
-      className="h-[450px] w-full z-0"
+      center={center} 
+      zoom={12} 
+      style={{ height: '100%', width: '100%', borderRadius: '1rem' }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       
-      {/* Dynamisches Zeichnen aller übergebenen Campingplatz-Marker */}
-      {sites && sites.map((site) => (
+      {/* Automatischer Zoom auf die gesuchte Stadt */}
+      <ChangeView center={center} />
+      
+      {/* Nadeln für alle Campingplätze setzen */}
+      {sites.map(site => (
         <Marker key={site.id} position={[site.lat, site.lng]} icon={customIcon}>
           <Popup>
-            <div className="p-1">
-              <h3 className="font-bold text-sm">{site.name}</h3>
-              <p className="text-xs text-slate-600">{site.location}</p>
-              <p className="text-xs font-semibold text-emerald-600 mt-1">{site.price}</p>
+            <div className="font-sans">
+              <strong className="text-lg text-emerald-700">{site.name}</strong><br />
+              <span className="text-slate-500 text-sm">{site.location}</span><br />
+              <p className="mt-2 text-sm">{site.description}</p>
             </div>
           </Popup>
         </Marker>
